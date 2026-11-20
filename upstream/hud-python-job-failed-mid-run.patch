@@ -1,0 +1,103 @@
+diff --git a/docs/v6/reference/tasks.mdx b/docs/v6/reference/tasks.mdx
+index 877eb16..0073c53 100644
+--- a/docs/v6/reference/tasks.mdx
++++ b/docs/v6/reference/tasks.mdx
+@@ -177,7 +177,9 @@ set, the agent timeout must be less than the rollout timeout and any explicit ac
+ omitted. Grader-specific limits, such as `BashGrader.timeout_seconds`, remain local to that grader.
+ 
+ A crashed rollout comes back as a failed [`Trace`](/v6/reference/types#trace) inside the job rather than
+-raising, so one bad rollout never collapses a batch. For the end-to-end workflow see
++raising, so one bad rollout never collapses a batch. A rollout whose agent raised is still graded on
++what it left, so its reward counts toward `job.reward`; `job.failed_mid_run` lists those traces. For the
++end-to-end workflow see
+ [running an eval](/v6/guides/running-an-eval).
+ 
+ ## Syncing
+diff --git a/docs/v6/reference/types.mdx b/docs/v6/reference/types.mdx
+index 639dafe..35adf25 100644
+--- a/docs/v6/reference/types.mdx
++++ b/docs/v6/reference/types.mdx
+@@ -62,12 +62,14 @@ trace reports under a job, so even a single `task.run` returns a job of one. You
+ | `taskset_id` | `str \| None` | Platform taskset id when the job runs a synced taskset (`Taskset.from_api`), else `None`. |
+ | `reward` | `float` | Property: mean reward across graded traces, excluding `errors` (`0.0` when none were graded). |
+ | `errors` | `list[Trace]` | Property: traces whose `grade.is_error` is true. |
++| `failed_mid_run` | `list[Trace]` | Property: traces whose rollout errored (`trace.is_error`) but still got a grade. `reward` includes them, graded on whatever the agent left. |
+ | `results` | `dict[str, list[Trace]]` | Property: traces grouped by task slug - the alignment-safe alternative to `zip(tasks, job.traces)`, list-valued since `group > 1` gives several traces per task. |
+ 
+ ```python
+ job = await ts.run(agent, runtime=LocalRuntime("env.py"), group=4)
+ print(job.reward)       # mean across graded traces
+ print(len(job.errors))  # traces without a grade
++print(len(job.failed_mid_run))  # crashed mid-run, still graded and in the mean
+ ```
+ 
+ Each `run` call mints its own job by default. To gather many calls under one id - a training session, a
+diff --git a/hud/cli/eval.py b/hud/cli/eval.py
+index 58b62d6..dbd1b1b 100644
+--- a/hud/cli/eval.py
++++ b/hud/cli/eval.py
+@@ -551,7 +551,7 @@ def eval_command(
+         hud_console.print(f"  [dim]Mean reward:[/dim] [green]{job.reward:.3f}[/green]")
+         if errors:
+             hud_console.print(f"  [dim]Errors:[/dim] [red]{len(errors)}[/red]")
+-        failed_mid_run = sum(trace.is_error and not trace.grade.is_error for trace in job.traces)
++        failed_mid_run = len(job.failed_mid_run)
+         if failed_mid_run:
+             hud_console.print(
+                 f"  [dim]Failed mid-run, graded:[/dim] [yellow]{failed_mid_run}[/yellow]"
+diff --git a/hud/eval/job.py b/hud/eval/job.py
+index 863bfc0..3f614ac 100644
+--- a/hud/eval/job.py
++++ b/hud/eval/job.py
+@@ -48,6 +48,11 @@ class Job:
+         """Traces whose grade is an error, which ``reward`` excludes."""
+         return [trace for trace in self.traces if trace.grade.is_error]
+ 
++    @property
++    def failed_mid_run(self) -> list[Trace]:
++        """Traces whose rollout errored but still got a grade, which ``reward`` includes."""
++        return [trace for trace in self.traces if trace.is_error and not trace.grade.is_error]
++
+     @property
+     def results(self) -> dict[str, list[Trace]]:
+         """Traces by task slug, a list per slug since ``group`` repeats each task."""
+diff --git a/tests/eval/test_tasksets.py b/tests/eval/test_tasksets.py
+index 428d929..4219389 100644
+--- a/tests/eval/test_tasksets.py
++++ b/tests/eval/test_tasksets.py
+@@ -306,6 +306,35 @@ async def test_a_jobs_reward_averages_its_graded_runs_and_its_errors_are_the_res
+     assert ([trace.slug for trace in job.errors], job.reward) == (["grader-raised"], 1.0)
+ 
+ 
++async def test_a_rollout_whose_agent_raises_is_graded_and_listed_as_failed_mid_run() -> None:
++    env = Environment("crashy")
++
++    @env.template()
++    async def check(behaviour: str):
++        answer = yield behaviour
++        yield 1.0 if answer == "yes" else 0.0
++
++    class Scripted(Agent):
++        async def __call__(self, run: Run) -> None:
++            if run.prompt_text in ("clean", "solve-then-crash"):
++                run.trace.content = "yes"
++            if run.prompt_text != "clean":
++                raise RuntimeError("gateway 403")
++
++    behaviours = ["clean", "solve-then-crash", "crash-immediately"]
++    rows = [Task(env="crashy", id="check", slug=b, args={"behaviour": b}) for b in behaviours]
++    job = await Taskset("crashy", rows).run(Scripted(AgentConfig()), runtime=LocalRuntime(env))
++
++    assert {trace.slug: (trace.is_error, trace.reward) for trace in job.traces} == {
++        "clean": (False, 1.0),
++        "solve-then-crash": (True, 1.0),
++        "crash-immediately": (True, 0.0),
++    }
++    assert job.errors == []
++    assert [trace.slug for trace in job.failed_mid_run] == ["solve-then-crash", "crash-immediately"]
++    assert job.reward == pytest.approx(2 / 3)
++
++
+ async def test_cancelling_a_run_cancels_every_rollout_and_stops_their_envs() -> None:
+     events = []
+ 
