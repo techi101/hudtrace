@@ -1,8 +1,22 @@
-# hud-proof: making a HUD job's failing step obvious
+# hudtrace: see which HUD rollouts crashed, and the first step that failed
+
+**[Try it live: hudtrace.vercel.app](https://hudtrace.vercel.app)**, no install.
+
+[![hudtrace trace viewer](docs/screenshot_1440.png)](https://hudtrace.vercel.app)
+
+**Problem:** a HUD job's `job.reward` silently averages in rollouts that crashed mid-run, and inside a
+long trace the step that went wrong is buried ([hud-python#836](https://github.com/hud-evals/hud-python/issues/836)).
+
+**Result:** on a recorded 5-rollout job, HUD reports reward **0.750**, but **2 of the 4 rollouts in that
+mean crashed mid-run** (1 more is a grader error, left out). The viewer flags each crash, folds a 19-step
+rollout into 9 rows (a 12-step loop becomes one `x6` row) and jumps to the first failing step.
+The example data is synthetic: a scripted agent (no LLM) run through hud-python's real `Taskset.run`.
+
+## Background
 
 A small proof of work around HUD's Python SDK ([hud-evals/hud-python](https://github.com/hud-evals/hud-python)).
 Two parts: a fix for an open SDK issue, and a small trace viewer built on the same data.
-Local only: nothing here has been pushed, opened as a PR, or posted.
+No PR has been opened upstream.
 
 ## The problem (public sources)
 
@@ -129,6 +143,10 @@ python -m hudtrace examples/job_traces.json -o examples/report.html
 
 # re-record the job (needs hud-python installed, e.g. pip install -e <clone>)
 python examples/record_job.py examples/job_traces.json
+
+# rebuild the live demo's data from the same tool, then check it (Playwright)
+python site/build_data.py            # writes site/data.json from examples/job_traces.json
+python site/check_page.py https://hudtrace.vercel.app/ docs
 
 # apply the SDK patch to a hud-python clone at 485e8fd
 git apply upstream/hud-python-job-failed-mid-run.patch

@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>hudtrace: HUD trace viewer</title>
+<meta name="description" content="Trace viewer for HUD agent evals: shows which rollouts crashed mid-run inside job.reward, folds repeated steps, and highlights the first failing step.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%234338ca'/%3E%3Cpath d='M8 10h16M8 16h10M8 22h6' stroke='white' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo" aria-hidden="true"><svg viewBox="0 0 32 32"><rect width="32" height="32" rx="7"/><path d="M8 10h16M8 16h10M8 22h6"/></svg></span>
+    <span class="name">hudtrace</span>
+    <span class="crumb">/ <span id="job-name">job</span></span>
+  </div>
+  <nav class="links">
+    <span class="tag-synth" title="" id="synth-tag">Synthetic data</span>
+    <a class="gh" href="https://github.com/techi101/hudtrace">GitHub</a>
+  </nav>
+</header>
+
+<section class="intro">
+  <h1>A trace viewer for HUD agent evals that shows which rollouts crashed and the first step that went wrong.</h1>
+  <p class="how"><b>How to use:</b> pick a run, read its step timeline (repeats are folded, the first failing step is red), click any step to see its raw JSON.</p>
+</section>
+
+<section class="summary card" aria-label="Job summary">
+  <div class="summary-head">
+    <div>
+      <div class="eyebrow">Job summary</div>
+      <p class="headline" id="headline"></p>
+    </div>
+  </div>
+  <div class="stats" id="stats"></div>
+  <p class="synth-note" id="synth-note"></p>
+</section>
+
+<main class="workspace">
+  <aside class="runs card" aria-label="Runs">
+    <div class="pane-head">
+      <h2>Runs</h2>
+      <span class="muted" id="runs-count"></span>
+    </div>
+    <div class="filters" role="tablist" id="filters"></div>
+    <ul class="run-list" id="run-list"></ul>
+  </aside>
+
+  <section class="timeline card" aria-label="Step timeline">
+    <div class="pane-head run-head" id="run-head"></div>
+    <div id="fail-banner"></div>
+    <div class="tl-toolbar">
+      <span class="muted" id="tl-count"></span>
+      <label class="switch"><input type="checkbox" id="fold-toggle" checked> <span>Fold repeated steps</span></label>
+    </div>
+    <ol class="steps" id="steps"></ol>
+  </section>
+
+  <aside class="drawer card" id="drawer" aria-label="Step details">
+    <div class="pane-head">
+      <h2>Step details</h2>
+      <button class="close" id="drawer-close" aria-label="Close details">Close</button>
+    </div>
+    <div id="drawer-body" class="drawer-body"></div>
+  </aside>
+</main>
+<div class="scrim" id="scrim"></div>
+
+<footer class="foot">
+  <p>Page data is built by <code>python site/build_data.py</code> from <code id="src-file"></code> using the same <code>hudtrace</code> code as the CLI. Fold rule: identical consecutive steps or repeating blocks of up to 4 steps. "First failing step" = a step <code>error</code>, a tool result with <code>isError</code>, or a refusal.</p>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
